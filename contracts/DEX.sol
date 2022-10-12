@@ -2,6 +2,7 @@
 pragma solidity ^0.8.7;
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/utils/math/SafeMath.sol";
+import "hardhat/console.sol";
 
 /**
  * @title DEX contract that converts ETH -> 0KAGE -> ETH
@@ -209,8 +210,8 @@ contract DEX {
             revert DEX__zKageTransferToFailed(msg.sender, zeroKageQty, zKageReserve);
         }
 
-        s_liquidity[msg.sender] -= numLPTokens;
         s_totalLiquidity -= numLPTokens;
+        s_liquidity[msg.sender] -= numLPTokens;
 
         emit RemoveLiquidity(msg.sender, numLPTokens, ethQty, zeroKageQty);
     }
@@ -262,19 +263,85 @@ contract DEX {
     }
 
     // ************************* GET FUNCTIONS *********************** //
+
+    /**
+     * @notice gets # of Eth tokens you can swap for a given # of 0Kage tokens
+     * @param numTokens number of 0Kage tokens that need to be swapped
+     * @return eth number of eth that you can exchange to/from pool for 0Kage tokens
+     */
+    function getSwappableEth(uint256 numTokens) public view returns (uint256 eth) {
+        uint256 tokenReserves = s_zeroKage.balanceOf(address(this));
+        uint256 ethReserves = address(this).balance;
+        eth = price(numTokens, tokenReserves, ethReserves, i_lpFees);
+    }
+
+    /**
+     * @notice gets # of 0Kage tokens you can swap for a given # of eth
+     * @param numEth number of eth coins that need to be swapped for 0Kage
+     * @return tokens number of tokens that you can exchange to/from pool for numEth ethereum
+     */
+    function getSwappableTokens(uint256 numEth) public view returns (uint256 tokens) {
+        uint256 tokenReserves = s_zeroKage.balanceOf(address(this));
+        uint256 ethReserves = address(this).balance;
+        tokens = price(numEth, ethReserves, tokenReserves, i_lpFees);
+    }
+
+    /**
+     * @notice gets liquidity for a given address
+     * @param user address of user whose liquidity is to be calculated
+     * @return liquidity for specific user
+     */
     function getLiquidity(address user) public view returns (uint256) {
         return s_liquidity[user];
     }
 
+    /**
+     * @notice gets total liquidity in the pool supplied by all users
+     * @return total liquidity in pool
+     */
     function getTotalLiquidity() public view returns (uint256) {
         return s_totalLiquidity;
     }
 
+    /**
+     * @notice returns the address of 0Kage token
+     * @return deployed address of 0Kage token
+     */
     function getZeroKageTokenAddress() public view returns (address) {
         return address(s_zeroKage);
     }
 
+    /**
+     * @notice lp fees charged by protocol  - default value set to 3 bps
+     * @return lp fees in basis points
+     */
     function getLPFees() public view returns (uint256) {
         return i_lpFees;
+    }
+
+    /**
+     * @notice amount of Eth to be added to LP pool for given # of tokens
+     * @param numTokens number of tokens that are added to LP pool
+     * @dev tokens need to be added proportionately as per constant product AMM formulas
+     * @return numEth number of ether to be added to pool
+     */
+    function getEthToPool(uint256 numTokens) public view returns (uint256 numEth) {
+        uint256 ethReserve = address(this).balance;
+        uint256 tokenReserve = s_zeroKage.balanceOf(address(this));
+
+        numEth = numTokens.mul(ethReserve).div(tokenReserve);
+    }
+
+    /**
+     * @notice amount of tokens to be added to LP pool for given # of eth added
+     * @param numEth number of eth to be added to pool
+     * @dev Eth needs to be proportionately added as per constant product AMM formula
+     * @return numTokens number of tokens to be added to pool
+     */
+    function getTokensToPool(uint256 numEth) public view returns (uint256 numTokens) {
+        uint256 ethReserve = address(this).balance;
+        uint256 tokenReserve = s_zeroKage.balanceOf(address(this));
+
+        numTokens = numEth.mul(tokenReserve).div(ethReserve);
     }
 }

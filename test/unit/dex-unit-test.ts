@@ -243,6 +243,9 @@ console.log("chain Id", chainId)
               let liquidityBeforeFunding = BigNumber.from(0)
               let liquidityAfterFunding = BigNumber.from(0)
 
+              let providerLiquidityBefore = BigNumber.from(0)
+              let providerLiquidityAfter = BigNumber.from(0)
+
               let ethBalanceBeforeLP = BigNumber.from(0)
               let ethBalanceAfterLP = BigNumber.from(0)
               let gasUsedForLP = BigNumber.from(0)
@@ -271,6 +274,7 @@ console.log("chain Id", chainId)
                   await initResponse.wait(1)
 
                   liquidityBeforeFunding = await dexContract.getTotalLiquidity()
+                  providerLiquidityBefore = await dexContract.getLiquidity(lpProvider.address)
                   ethBalanceBeforeLP = await ethers.provider.getBalance(lpProvider.address)
                   ethPoolBalanceBeforeLP = await ethers.provider.getBalance(dexContract.address)
                   tokenPoolBalanceBeforeLP = await zKageContract.balanceOf(dexContract.address)
@@ -294,6 +298,8 @@ console.log("chain Id", chainId)
 
                   const addLiquidityReceipt = await addLiquidityResponse.wait(1)
                   gasUsedForLP = addLiquidityReceipt.cumulativeGasUsed
+                  providerLiquidityAfter = await dexContract.getLiquidity(lpProvider.address)
+
                   liquidityAfterFunding = await dexContract.getTotalLiquidity()
               })
 
@@ -306,10 +312,6 @@ console.log("chain Id", chainId)
 
               it("Eth decrease in depositors account", async () => {
                   ethBalanceAfterLP = await ethers.provider.getBalance(lpProvider.address)
-                  console.log("eth before lp", ethBalanceBeforeLP.toString())
-                  console.log("new eth liquidity", newEthLiquidity.toString())
-                  console.log("eth after lp", ethBalanceAfterLP.toString())
-                  console.log("gas used for lp", gasUsedForLP.toString())
                   expect(
                       ethBalanceBeforeLP.sub(newEthLiquidity).sub(gasUsedForLP).toString()
                   ).equals(
@@ -350,6 +352,16 @@ console.log("chain Id", chainId)
 
                   const deployerLiquidity = await dexContract.getLiquidity(lpUser.address)
 
+                  console.log("provider liquidity before", providerLiquidityBefore.toString())
+                  console.log("provider liquidity after", providerLiquidityAfter.toString())
+                  expect(providerLiquidityBefore.toString()).equals(
+                      "0",
+                      "initial provider liquidity should be 0"
+                  )
+                  expect(providerLiquidityAfter.toString()).equals(
+                      totalLiquidity.sub(deployerLiquidity).toString(),
+                      "provider liquidity = total - deployer liqyidity"
+                  )
                   expect(totalLiquidity.toString()).equals(
                       deployerLiquidity.add(lpProviderLiquidity).toString(),
                       "total liquidity = liquidity by user + liquidity by new provider"
@@ -426,7 +438,7 @@ console.log("chain Id", chainId)
                       dexContract.address
                   )
 
-                  liqToWithdraw = liquidityBeforeWithdrawal.mul(5).div(10)
+                  liqToWithdraw = liquidityBeforeWithdrawal
                   // we are withdrawing 50% of total liquidity provider
 
                   ethToWithdraw = ethPoolBalanceBeforeWithdrawal
@@ -437,10 +449,11 @@ console.log("chain Id", chainId)
                       .div(totalLiquidityBeforeWithdrawal)
 
                   // step 3: provider withdraws liquidity partially (5 0KAGE + 0.5 ETH)
-                  const withdrawLiquidityTx = await dexContract.withdraw(liqToWithdraw)
+                  const withdrawLiquidityTx = await dexContract
+                      .connect(lpProvider)
+                      .withdraw(liqToWithdraw)
                   await withdrawLiquidityTx.wait(1)
 
-                  liquidityAfterWithdrawal = await dexContract.getLiquidity(lpProvider.address)
                   ethPoolBalanceAfterWithdrawal = await ethers.provider.getBalance(
                       dexContract.address
                   )
@@ -451,9 +464,20 @@ console.log("chain Id", chainId)
 
               it("total liquidity decrease", async () => {
                   totalLiquidityAfterWithdrawal = await dexContract.getTotalLiquidity()
+
                   expect(totalLiquidityBeforeWithdrawal.sub(liqToWithdraw).toString()).equals(
                       totalLiquidityAfterWithdrawal.toString(),
                       "total liquidity reduces by amount of liquidity withdrawn"
+                  )
+              })
+
+              it("user liquidity decrease", async () => {
+                  totalLiquidityAfterWithdrawal = await dexContract.getTotalLiquidity()
+                  liquidityAfterWithdrawal = await dexContract.getLiquidity(lpProvider.address)
+
+                  expect(liquidityBeforeWithdrawal.sub(liqToWithdraw).toString()).equals(
+                      liquidityAfterWithdrawal.toString(),
+                      "liquidity for user should reduce by liquidity withdrawn"
                   )
               })
 
